@@ -25,6 +25,15 @@ function tryExtractUrl(text) {
 cf.stdout.on('data', d => tryExtractUrl(d.toString()));
 cf.stderr.on('data', d => tryExtractUrl(d.toString()));
 
+cf.on('error', err => {
+  if (err.code === 'ENOENT') {
+    console.error('cloudflared not found. Install it with: winget install Cloudflare.cloudflared');
+  } else {
+    console.error('cloudflared error:', err.message);
+  }
+  process.exit(1);
+});
+
 cf.on('exit', code => {
   if (!started) {
     console.error('cloudflared exited before providing a URL');
