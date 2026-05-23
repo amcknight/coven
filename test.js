@@ -136,3 +136,18 @@ test('GET /icon.svg returns SVG content', async () => {
     await new Promise(resolve => srv.close(resolve));
   }
 });
+
+test('GET /sw.js returns service worker JavaScript', async () => {
+  const { httpServer: srv, interval } = await start(0);
+  const { port } = srv.address();
+  try {
+    const { status, headers, body } = await getRoute(port, '/sw.js');
+    assert.equal(status, 200);
+    assert.ok(headers['content-type'].includes('javascript'));
+    assert.ok(body.includes('install'));
+    assert.ok(body.includes('activate'));
+  } finally {
+    clearInterval(interval);
+    await new Promise(resolve => srv.close(resolve));
+  }
+});

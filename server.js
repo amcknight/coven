@@ -66,6 +66,11 @@ const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <circle cx="256" cy="256" r="22" fill="#eaf3ff"/>
 </svg>`;
 
+const SW_JS = [
+  "self.addEventListener('install', e => e.waitUntil(self.skipWaiting()));",
+  "self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));",
+].join('\n');
+
 // Generated once at startup; served at /qr.png so phones need no internet.
 let qrBuffer = null;
 QRCode.toBuffer(`http://${getLanIp()}:${PORT}`, {
@@ -87,6 +92,11 @@ const httpServer = http.createServer((req, res) => {
   if (req.url === '/icon.svg') {
     res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
     res.end(ICON_SVG);
+    return;
+  }
+  if (req.url === '/sw.js') {
+    res.writeHead(200, { 'Content-Type': 'application/javascript' });
+    res.end(SW_JS);
     return;
   }
   res.writeHead(200, { 'Content-Type': 'text/html' });
