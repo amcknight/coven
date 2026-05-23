@@ -82,6 +82,17 @@
     box-shadow: 0 0 20px rgba(47,123,255,0.3);
   }
   #btn-install { display: none; }
+  #ios-hint {
+    display: none;
+    font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase;
+    color: #3f5a8a; text-align: center; line-height: 1.8;
+    margin-top: 0.5rem; max-width: 22rem;
+  }
+  #ios-hint .ios-share {
+    display: inline-block; vertical-align: -2px; margin: 0 0.15em;
+    color: var(--blue-bright); opacity: 0.85;
+  }
+  #ios-hint b { color: var(--blue-bright); font-weight: 500; opacity: 0.9; }
 </style>
 </head>
 <body>
@@ -98,6 +109,15 @@
     <button id="btn-left">Join Left</button>
     <button id="btn-right">Join Right</button>
     <button id="btn-install">Install App</button>
+  </div>
+  <div id="ios-hint">
+    iPhone — tap
+    <svg class="ios-share" width="13" height="16" viewBox="0 0 24 28" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 2 L12 18" />
+      <path d="M6 8 L12 2 L18 8" />
+      <path d="M4 14 L4 25 L20 25 L20 14" />
+    </svg>
+    Share → <b>Add to Home Screen</b>
   </div>
 </div>
 
@@ -143,6 +163,14 @@ if (!IN_GAME) {
       document.getElementById('btn-install').style.display = 'none';
     });
   });
+
+  // iOS Safari never fires beforeinstallprompt — surface the manual flow instead.
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isStandalone = window.navigator.standalone === true
+                    || window.matchMedia('(display-mode: standalone)').matches;
+  if (isIOS && !isStandalone) {
+    document.getElementById('ios-hint').style.display = 'block';
+  }
 }
 
 // ============================================================

@@ -170,6 +170,24 @@ test('GET / contains iOS PWA meta tags + apple-touch-icon', async () => {
   }
 });
 
+test('GET / contains iOS install hint for non-standalone iOS users', async () => {
+  const { httpServer: srv, interval } = await start(0);
+  const { port } = srv.address();
+  try {
+    const { status, body } = await getRoute(port, '/');
+    assert.equal(status, 200);
+    // Hint element exists in the start screen
+    assert.match(body, /id="ios-hint"/);
+    // Client detects iOS via UA sniffing
+    assert.match(body, /iPad\|iPhone\|iPod/);
+    // Surfaces the actual user instruction
+    assert.ok(body.includes('Add to Home Screen'));
+  } finally {
+    clearInterval(interval);
+    await new Promise(resolve => srv.close(resolve));
+  }
+});
+
 test('getPublicUrl returns COVEN_URL when set', () => {
   process.env.COVEN_URL = 'https://test.trycloudflare.com';
   try {
