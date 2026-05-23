@@ -152,6 +152,24 @@ test('GET /sw.js returns service worker JavaScript', async () => {
   }
 });
 
+test('GET / contains iOS PWA meta tags + apple-touch-icon', async () => {
+  const { httpServer: srv, interval } = await start(0);
+  const { port } = srv.address();
+  try {
+    const { status, body } = await getRoute(port, '/');
+    assert.equal(status, 200);
+    // Standalone mode on iOS Safari
+    assert.match(body, /name="apple-mobile-web-app-capable"[^>]*content="yes"/);
+    // Black-translucent status bar so the dark aesthetic carries through
+    assert.match(body, /name="apple-mobile-web-app-status-bar-style"/);
+    // Home-screen icon (otherwise iOS shows a screenshot or default)
+    assert.match(body, /rel="apple-touch-icon"/);
+  } finally {
+    clearInterval(interval);
+    await new Promise(resolve => srv.close(resolve));
+  }
+});
+
 test('getPublicUrl returns COVEN_URL when set', () => {
   process.env.COVEN_URL = 'https://test.trycloudflare.com';
   try {
