@@ -1,29 +1,13 @@
 const { spawn } = require('child_process');
 
-const cf = spawn('cloudflared', ['tunnel', '--url', 'http://localhost:8080'], {
+const COVEN_URL = 'https://coven.amcknight.ca';
+
+const cf = spawn('cloudflared', ['tunnel', 'run', 'coven'], {
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 
-let started = false;
-let buf = '';
-
-function tryExtractUrl(text) {
-  if (started) return;
-  buf += text;
-  const m = buf.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
-  if (!m) return;
-  started = true;
-  const url = m[0];
-  console.log(`\n  Tunnel: ${url}\n`);
-  const server = spawn('node', ['server.js'], {
-    stdio: 'inherit',
-    env: { ...process.env, COVEN_URL: url },
-  });
-  server.on('exit', code => process.exit(code ?? 0));
-}
-
-cf.stdout.on('data', d => tryExtractUrl(d.toString()));
-cf.stderr.on('data', d => tryExtractUrl(d.toString()));
+cf.stdout.on('data', d => process.stdout.write(d));
+cf.stderr.on('data', d => process.stderr.write(d));
 
 cf.on('error', err => {
   if (err.code === 'ENOENT') {
@@ -35,10 +19,19 @@ cf.on('error', err => {
 });
 
 cf.on('exit', code => {
-  if (!started) {
-    console.error('cloudflared exited before providing a URL');
-    process.exit(code ?? 1);
-  }
+  console.error(`cloudflared exited (code ${code ?? 0})`);
+  process.exit(code ?? 1);
+});
+
+console.log(`\n  Tunnel: ${COVEN_URL}\n`);
+
+const server = spawn('node', ['server.js'], {
+  stdio: 'inherit',
+  env: { ...process.env, COVEN_URL },
+});
+server.on('exit', code => {
+  cf.kill();
+  process.exit(code ?? 0);
 });
 
 process.on('SIGINT', () => {
