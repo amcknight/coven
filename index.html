@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+<title>COVEN</title>
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#04060d" />
+<style>
+  :root { --blue: #2f7bff; --blue-bright: #9fd0ff; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #04060d; }
+  body {
+    background:
+      radial-gradient(120% 90% at 50% 50%, #0a1326 0%, #060a16 45%, #03050b 100%);
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  canvas { display: block; }
+  #grain {
+    position: fixed; inset: 0; pointer-events: none; opacity: 0.05; mix-blend-mode: screen;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  #label {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+    font: 11px ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: 0.42em; text-transform: uppercase; text-indent: 0.42em;
+    color: #3f5a8a; pointer-events: none; white-space: nowrap;
+  }
+  #label b { color: var(--blue-bright); font-weight: 600; }
+  #label .dot { color: #ff5a5a; }
+  #label .dot.live { color: #57e08a; }
+
+  /* ---- start screen ---- */
+  #start {
+    display: none;
+    position: fixed; inset: 0;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 2rem;
+  }
+  .s-logo {
+    font-size: clamp(2rem, 10vw, 3.5rem);
+    letter-spacing: 0.55em; text-indent: 0.55em; text-transform: uppercase;
+    color: var(--blue-bright);
+    text-shadow: 0 0 40px rgba(47,123,255,0.9), 0 0 100px rgba(47,123,255,0.3);
+  }
+  .s-sub {
+    font-size: 0.7rem; letter-spacing: 0.4em; text-indent: 0.4em; text-transform: uppercase;
+    color: #3f5a8a; margin-top: -1.5rem;
+  }
+  #qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
+  #qr-img {
+    border: 1px solid rgba(47,123,255,0.25);
+    border-radius: 6px;
+    box-shadow: 0 0 24px rgba(47,123,255,0.15);
+    display: block;
+  }
+  #qr-url {
+    font-size: 0.6rem; color: #3f5a8a; letter-spacing: 0.08em;
+  }
+  .s-actions { display: flex; gap: 1.5rem; }
+  .s-actions button {
+    background: transparent;
+    border: 1px solid rgba(47,123,255,0.4);
+    color: var(--blue-bright);
+    font: inherit; font-size: 0.7rem;
+    letter-spacing: 0.35em; text-indent: 0.35em; text-transform: uppercase;
+    padding: 0.8rem 1.6rem;
+    cursor: pointer;
+    transition: background 0.15s, box-shadow 0.15s, border-color 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .s-actions button:active {
+    background: rgba(47,123,255,0.15);
+    border-color: rgba(47,123,255,0.85);
+    box-shadow: 0 0 20px rgba(47,123,255,0.3);
+  }
+</style>
+</head>
+<body>
+
+<!-- start screen (shown when no ?side= param) -->
+<div id="start">
+  <div class="s-logo">Coven</div>
+  <div class="s-sub">rite i · ember</div>
+  <div id="qr-wrap">
+    <img id="qr-img" src="/qr.png" width="148" height="148" alt="scan to join" />
+    <div id="qr-url"></div>
+  </div>
+  <div class="s-actions">
+    <button id="btn-left">Join Left</button>
+    <button id="btn-right">Join Right</button>
+  </div>
+</div>
+
+<!-- game (shown when ?side=left|right) -->
+<canvas id="c"></canvas>
+<div id="grain"></div>
+<div id="label"><span class="dot" id="dot">●</span> &nbsp;coven · rite i · <b id="sidelabel">—</b></div>
+
+<script>
+const SIDE = new URLSearchParams(location.search).get('side');
+const IN_GAME = SIDE === 'left' || SIDE === 'right';
+
+// ============================================================
+// START SCREEN
+// ============================================================
+if (!IN_GAME) {
+  document.getElementById('c').style.display = 'none';
+  document.getElementById('label').style.display = 'none';
+  const startEl = document.getElementById('start');
+  startEl.style.display = 'flex';
+
+  document.getElementById('qr-url').textContent = location.origin;
+
+  function join(side) {
+    document.documentElement.requestFullscreen?.().catch?.(() => {});
+    location.href = location.origin + '/?side=' + side;
+  }
+
+  document.getElementById('btn-left').addEventListener('click', () => join('left'));
+  document.getElementById('btn-right').addEventListener('click', () => join('right'));
+}
+
+// ============================================================
+// GAME
+// ============================================================
+if (IN_GAME) {
+  document.getElementById('start').remove();
+
+  const BASE_X = SIDE === 'right' ? 100 : 0;
+  document.getElementById('sidelabel').textContent = SIDE;
+
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  let W = 0, H = 0, sx = 1, sy = 1;
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    sx = W / 100; sy = H / 100;
+  }
+  addEventListener('resize', resize); resize();
+
+  const lx = wx => (wx - BASE_X) * sx;
+  const ly = wy => wy * sy;
+
+  let state = null;
+  const view = { ex: 50, ey: 50 };
+  const trail = [];
+
+  // ---- wake lock: keep the screen on ----
+  let wakeLock = null;
+  async function requestWakeLock() {
+    if (!navigator.wakeLock) return;
+    try { wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+  }
+  // re-acquire after the page becomes visible again (it's released on hide)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') requestWakeLock();
+  });
+
+  // ---- fullscreen: request on first touch ----
+  let fullscreenDone = false;
+  function tryFullscreen() {
+    if (fullscreenDone) return;
+    fullscreenDone = true;
+    document.documentElement.requestFullscreen?.().catch?.(() => {});
+  }
+
+  // ---- websocket to the altar ----
+  let ws;
+  function connect() {
+    ws = new WebSocket(`ws://${location.host}`);
+    ws.onopen = () => {
+      document.getElementById('dot').classList.add('live');
+      requestWakeLock();
+    };
+    ws.onclose = () => {
+      document.getElementById('dot').classList.remove('live');
+      setTimeout(connect, 800);
+    };
+    ws.onmessage = (ev) => {
+      try {
+        const m = JSON.parse(ev.data);
+        if (m.type === 'reload') { location.reload(); return; }
+        if (m.type === 'state') { state = m; state._t = performance.now(); }
+      } catch {}
+    };
+  }
+  connect();
+
+  // ---- touch -> altar ----
+  let touching = false;
+  function sendTouch(active, clientX, clientY) {
+    if (!ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({
+      type: 'input', side: SIDE, active,
+      x: Math.max(0, Math.min(1, clientX / W)),
+      y: Math.max(0, Math.min(1, clientY / H)),
+    }));
+  }
+  const pt = e => (e.touches && e.touches[0]) ? e.touches[0] : e;
+  cv.addEventListener('touchstart', e => {
+    e.preventDefault(); tryFullscreen();
+    touching = true; const p = pt(e); sendTouch(true, p.clientX, p.clientY);
+  }, { passive: false });
+  cv.addEventListener('touchmove',  e => {
+    e.preventDefault(); const p = pt(e); sendTouch(true, p.clientX, p.clientY);
+  }, { passive: false });
+  cv.addEventListener('touchend',   e => {
+    e.preventDefault(); touching = false; sendTouch(false, 0, 0);
+  }, { passive: false });
+  cv.addEventListener('mousedown', e => { tryFullscreen(); touching = true; sendTouch(true, e.clientX, e.clientY); });
+  cv.addEventListener('mousemove', e => { if (touching) sendTouch(true, e.clientX, e.clientY); });
+  addEventListener('mouseup', () => { if (touching) { touching = false; sendTouch(false, 0, 0); } });
+
+  // ---- drawing ----
+  function drawBorder(pulse) {
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(47,123,255,0.55)';
+    ctx.shadowColor = 'rgba(47,123,255,0.9)';
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.moveTo(0, 2); ctx.lineTo(W, 2);
+    ctx.moveTo(0, H - 2); ctx.lineTo(W, H - 2);
+    if (SIDE === 'left') { ctx.moveTo(2, 0); ctx.lineTo(2, H); }
+    else                 { ctx.moveTo(W - 2, 0); ctx.lineTo(W - 2, H); }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    const s = pulse * 600;
+    let wx, wy;
+    if      (s < 200) { wx = s;       wy = 0;       }
+    else if (s < 300) { wx = 200;     wy = s - 200;  }
+    else if (s < 500) { wx = 500 - s; wy = 100;      }
+    else              { wx = 0;       wy = 600 - s;  }
+    const px = lx(wx), py = ly(wy);
+    const g = ctx.createRadialGradient(px, py, 0, px, py, 60);
+    g.addColorStop(0, 'rgba(180,220,255,0.9)');
+    g.addColorStop(0.4, 'rgba(47,123,255,0.5)');
+    g.addColorStop(1, 'rgba(47,123,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(px, py, 60, 0, 7); ctx.fill();
+  }
+
+  function drawTouchGhost(t, mine) {
+    if (!t) return;
+    const px = lx(t.x), py = ly(t.y);
+    ctx.strokeStyle = mine ? 'rgba(159,208,255,0.7)' : 'rgba(120,150,210,0.35)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(px, py, 14 + i * 10, 0, 7); ctx.stroke(); }
+  }
+
+  function drawEmber(wx, wy) {
+    const px = lx(wx), py = ly(wy);
+    const rad = 7 * sx;
+    trail.push({ px, py });
+    if (trail.length > 16) trail.shift();
+    for (let i = 0; i < trail.length; i++) {
+      const a = i / trail.length;
+      ctx.fillStyle = `rgba(110,170,255,${a * 0.22})`;
+      ctx.beginPath(); ctx.arc(trail[i].px, trail[i].py, rad * (0.3 + a * 0.7), 0, 7); ctx.fill();
+    }
+    const g = ctx.createRadialGradient(px, py, 0, px, py, rad * 4);
+    g.addColorStop(0, 'rgba(230,242,255,0.95)');
+    g.addColorStop(0.25, 'rgba(120,190,255,0.85)');
+    g.addColorStop(0.6, 'rgba(47,123,255,0.35)');
+    g.addColorStop(1, 'rgba(47,123,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(px, py, rad * 4, 0, 7); ctx.fill();
+    ctx.fillStyle = '#eaf3ff';
+    ctx.beginPath(); ctx.arc(px, py, rad * 0.7, 0, 7); ctx.fill();
+  }
+
+  function frame() {
+    ctx.clearRect(0, 0, W, H);
+    if (state) {
+      view.ex += (state.ember.x - view.ex) * 0.35;
+      view.ey += (state.ember.y - view.ey) * 0.35;
+      const elapsed = (performance.now() - state._t) / 1000;
+      const pulse = (state.pulse + elapsed / 6) % 1;
+      drawBorder(pulse);
+      drawTouchGhost(state.touch.left,  SIDE === 'left');
+      drawTouchGhost(state.touch.right, SIDE === 'right');
+      drawEmber(view.ex, view.ey);
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+</script>
+<script>
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+</script>
+</body>
+</html>

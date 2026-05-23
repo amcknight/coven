@@ -99,7 +99,7 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
   if (req.url === '/sw.js') {
-    res.writeHead(200, { 'Content-Type': 'application/javascript' });
+    res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-store' });
     res.end(SW_JS);
     return;
   }
