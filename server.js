@@ -46,6 +46,10 @@ function getLanIp() {
   return 'localhost';
 }
 
+function getPublicUrl() {
+  return process.env.COVEN_URL || `http://${getLanIp()}:${PORT}`;
+}
+
 const HTML_PATH = path.join(__dirname, 'index.html');
 let clientHtml = fs.readFileSync(HTML_PATH);
 
@@ -73,7 +77,7 @@ const SW_JS = [
 
 // Generated once at startup; served at /qr.png so phones need no internet.
 let qrBuffer = null;
-QRCode.toBuffer(`http://${getLanIp()}:${PORT}`, {
+QRCode.toBuffer(getPublicUrl(), {
   width: 148, margin: 2,
   color: { dark: '#9fd0ff', light: '#04060d' },
 }).then(buf => { qrBuffer = buf; }).catch(() => {});
@@ -206,4 +210,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { touchToWorld, start, httpServer, world, VW, VH, R };
+module.exports = { touchToWorld, start, httpServer, world, VW, VH, R, getPublicUrl };

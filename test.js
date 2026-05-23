@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const WebSocket = require('ws');
 const http = require('http');
-const { touchToWorld, start, httpServer, VW, VH } = require('./server');
+const { touchToWorld, start, httpServer, VW, VH, getPublicUrl } = require('./server');
 
 function getRoute(port, path) {
   return new Promise((resolve, reject) => {
@@ -150,4 +150,20 @@ test('GET /sw.js returns service worker JavaScript', async () => {
     clearInterval(interval);
     await new Promise(resolve => srv.close(resolve));
   }
+});
+
+test('getPublicUrl returns COVEN_URL when set', () => {
+  process.env.COVEN_URL = 'https://test.trycloudflare.com';
+  try {
+    assert.equal(getPublicUrl(), 'https://test.trycloudflare.com');
+  } finally {
+    delete process.env.COVEN_URL;
+  }
+});
+
+test('getPublicUrl falls back to LAN IP URL when COVEN_URL not set', () => {
+  delete process.env.COVEN_URL;
+  const url = getPublicUrl();
+  assert.ok(url.startsWith('http://'));
+  assert.ok(url.includes(':8080'));
 });
