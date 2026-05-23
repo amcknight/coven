@@ -12,6 +12,36 @@
 
 ---
 
+## ⚡ Resume state — 2026-05-23
+
+This plan is mid-execution. If picking up in a fresh session, read this first.
+
+**Done:**
+- ✅ **Task 1** — Cloudflare account created, `amcknight.ca` added (Free plan), GitHub Pages A records + `_domainconnect` CNAME set to "DNS only" (gray cloud), MX/TXT kept as-is. No `www` record (not used).
+- ✅ **Task 2** — Squarespace nameservers swapped from `ns-cloud-aX.googledomains.com` to Cloudflare's `kami.ns.cloudflare.com` and `tom.ns.cloudflare.com`. DNSSEC disabled (Squarespace required it for the swap; can re-enable on Cloudflare's side later if desired).
+- ✅ **Task 0 (interlude)** — iOS PWA polish committed while waiting for DNS:
+  - `apple-touch-icon` link + `apple-mobile-web-app-capable` / `status-bar-style` / `title` meta tags (commit `de1525b`)
+  - iOS install hint on the start screen with share-icon glyph (commit `ebc6865`)
+  - Tests added in [test.js](../../../test.js) cover both.
+
+**Waiting on:**
+- 🟡 **Cloudflare dashboard to flip `amcknight.ca` from "Pending Nameserver Update" → "Active"**. Last checked: still pending (external resolvers like Shaw/`8.8.8.8`/`1.1.1.1` still returning the old Google nameservers, which is normal during propagation). Cloudflare emails when it sees the change. Re-check [dash.cloudflare.com](https://dash.cloudflare.com/) periodically.
+
+**Next when Active:**
+- Tasks 3–7 (manual, ~15 min total): `cloudflared tunnel login` → `create coven` → write `config.yml` → `route dns` → smoke-test the tunnel.
+- Task 8: rewrite `start.js` (commit and verify with `npm test`).
+- Task 9: end-to-end smoke test via `npm run serve` from at least one phone (iPhone Safari install path if available).
+
+**Reference values (used by upcoming tasks):**
+- Domain: `amcknight.ca`
+- Subdomain target: `coven.amcknight.ca`
+- Cloudflare nameservers in use: `kami.ns.cloudflare.com`, `tom.ns.cloudflare.com`
+- Tunnel name (will be created): `coven`
+- `cloudflared` binary: `C:\Program Files (x86)\cloudflared\cloudflared.exe` (version 2026.5.0; may or may not be on the user's interactive PATH — verify with `cloudflared --version` from a fresh terminal)
+- Config file path (will be created): `%USERPROFILE%\.cloudflared\config.yml`
+
+---
+
 ## Notes on this plan
 
 - **Tasks 1–7 are manual** (Cloudflare/Squarespace dashboards, terminal commands on Andrew's machine). They are not codeable. Each task has verification steps so you can confirm it worked before continuing.
@@ -26,17 +56,17 @@
 
 **Files:** None — done in Cloudflare web dashboard.
 
-- [ ] **Step 1: Sign up at Cloudflare**
+- [x] **Step 1: Sign up at Cloudflare**
 
 Go to [https://dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up). Create a free account with your email.
 
-- [ ] **Step 2: Add `amcknight.ca` to Cloudflare**
+- [x] **Step 2: Add `amcknight.ca` to Cloudflare**
 
 In the Cloudflare dashboard: click **Add a site** → enter `amcknight.ca` → click **Continue**.
 
 When asked to choose a plan, select **Free** (at the bottom of the list). Click **Continue**.
 
-- [ ] **Step 3: Verify the imported DNS records**
+- [x] **Step 3: Verify the imported DNS records**
 
 Cloudflare will automatically scan your existing DNS at Squarespace and import the records it finds. You should see:
 
@@ -49,7 +79,7 @@ Cloudflare will automatically scan your existing DNS at Squarespace and import t
 
 Click **Continue**.
 
-- [ ] **Step 4: Copy down the Cloudflare nameservers**
+- [x] **Step 4: Copy down the Cloudflare nameservers**
 
 Cloudflare now shows you two nameservers, like:
 ```
@@ -67,19 +97,19 @@ dorothy.ns.cloudflare.com
 
 **Files:** None — done in Squarespace dashboard.
 
-- [ ] **Step 1: Open the Squarespace DNS settings**
+- [x] **Step 1: Open the Squarespace DNS settings**
 
 Squarespace dashboard → **Settings** → **Domains** → click `amcknight.ca` → find the **Nameservers** section (might be called "Use Squarespace Nameservers" toggle, or "Custom Nameservers").
 
-- [ ] **Step 2: Switch to custom nameservers**
+- [x] **Step 2: Switch to custom nameservers**
 
 Toggle off "Use Squarespace nameservers" (or equivalent), then enter the two Cloudflare nameservers from Task 1, Step 4.
 
-- [ ] **Step 3: Save**
+- [x] **Step 3: Save** (DNSSEC was disabled during the swap; Squarespace required it)
 
 Squarespace will warn that this is a big change. Confirm. Save.
 
-- [ ] **Step 4: Wait for propagation**
+- [x] **Step 4: Wait for propagation** (in flight at end of last session)
 
 Propagation can take 5 minutes to a few hours. In a new terminal, run:
 
