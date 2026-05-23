@@ -77,6 +77,7 @@
     border-color: rgba(47,123,255,0.85);
     box-shadow: 0 0 20px rgba(47,123,255,0.3);
   }
+  #btn-install { display: none; }
 </style>
 </head>
 <body>
@@ -92,6 +93,7 @@
   <div class="s-actions">
     <button id="btn-left">Join Left</button>
     <button id="btn-right">Join Right</button>
+    <button id="btn-install">Install App</button>
   </div>
 </div>
 
@@ -122,6 +124,21 @@ if (!IN_GAME) {
 
   document.getElementById('btn-left').addEventListener('click', () => join('left'));
   document.getElementById('btn-right').addEventListener('click', () => join('right'));
+
+  let installPrompt = null;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    installPrompt = e;
+    document.getElementById('btn-install').style.display = '';
+  });
+  document.getElementById('btn-install').addEventListener('click', () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    installPrompt.userChoice.then(() => {
+      installPrompt = null;
+      document.getElementById('btn-install').style.display = 'none';
+    });
+  });
 }
 
 // ============================================================
@@ -196,6 +213,14 @@ if (IN_GAME) {
 
   // ---- touch -> altar ----
   let touching = false;
+  let localTouch = null; // world coords, updated immediately (no roundtrip)
+
+  function updateLocalTouch(active, clientX, clientY) {
+    localTouch = active ? {
+      x: BASE_X + (clientX / W) * 100,
+      y: (clientY / H) * 100,
+    } : null;
+  }
   function sendTouch(active, clientX, clientY) {
     if (!ws || ws.readyState !== 1) return;
     ws.send(JSON.stringify({
@@ -207,17 +232,27 @@ if (IN_GAME) {
   const pt = e => (e.touches && e.touches[0]) ? e.touches[0] : e;
   cv.addEventListener('touchstart', e => {
     e.preventDefault(); tryFullscreen();
-    touching = true; const p = pt(e); sendTouch(true, p.clientX, p.clientY);
+    touching = true; const p = pt(e);
+    updateLocalTouch(true, p.clientX, p.clientY); sendTouch(true, p.clientX, p.clientY);
   }, { passive: false });
   cv.addEventListener('touchmove',  e => {
-    e.preventDefault(); const p = pt(e); sendTouch(true, p.clientX, p.clientY);
+    e.preventDefault(); const p = pt(e);
+    updateLocalTouch(true, p.clientX, p.clientY); sendTouch(true, p.clientX, p.clientY);
   }, { passive: false });
   cv.addEventListener('touchend',   e => {
-    e.preventDefault(); touching = false; sendTouch(false, 0, 0);
+    e.preventDefault(); touching = false;
+    updateLocalTouch(false); sendTouch(false, 0, 0);
   }, { passive: false });
-  cv.addEventListener('mousedown', e => { tryFullscreen(); touching = true; sendTouch(true, e.clientX, e.clientY); });
-  cv.addEventListener('mousemove', e => { if (touching) sendTouch(true, e.clientX, e.clientY); });
-  addEventListener('mouseup', () => { if (touching) { touching = false; sendTouch(false, 0, 0); } });
+  cv.addEventListener('mousedown', e => {
+    tryFullscreen(); touching = true;
+    updateLocalTouch(true, e.clientX, e.clientY); sendTouch(true, e.clientX, e.clientY);
+  });
+  cv.addEventListener('mousemove', e => {
+    if (touching) { updateLocalTouch(true, e.clientX, e.clientY); sendTouch(true, e.clientX, e.clientY); }
+  });
+  addEventListener('mouseup', () => {
+    if (touching) { touching = false; updateLocalTouch(false); sendTouch(false, 0, 0); }
+  });
 
   // ---- drawing ----
   function drawBorder(pulse) {
@@ -248,12 +283,12 @@ if (IN_GAME) {
     ctx.beginPath(); ctx.arc(px, py, 60, 0, 7); ctx.fill();
   }
 
-  function drawTouchGhost(t, mine) {
+  function drawTouchGhost(t, opacity, rings, baseR) {
     if (!t) return;
     const px = lx(t.x), py = ly(t.y);
-    ctx.strokeStyle = mine ? 'rgba(159,208,255,0.7)' : 'rgba(120,150,210,0.35)';
+    ctx.strokeStyle = `rgba(159,208,255,${opacity})`;
     ctx.lineWidth = 2;
-    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(px, py, 14 + i * 10, 0, 7); ctx.stroke(); }
+    for (let i = 0; i < rings; i++) { ctx.beginPath(); ctx.arc(px, py, baseR + i * 10, 0, 7); ctx.stroke(); }
   }
 
   function drawEmber(wx, wy) {
@@ -285,8 +320,10 @@ if (IN_GAME) {
       const elapsed = (performance.now() - state._t) / 1000;
       const pulse = (state.pulse + elapsed / 6) % 1;
       drawBorder(pulse);
-      drawTouchGhost(state.touch.left,  SIDE === 'left');
-      drawTouchGhost(state.touch.right, SIDE === 'right');
+      const otherSide = SIDE === 'left' ? 'right' : 'left';
+      drawTouchGhost(state.touch[otherSide], 0.35, 3, 14); // other phone
+      drawTouchGhost(state.touch[SIDE], 0.2, 2, 10);       // server echo (lag tail)
+      drawTouchGhost(localTouch,        0.7, 3, 14);       // local (immediate)
       drawEmber(view.ex, view.ey);
     }
     requestAnimationFrame(frame);
