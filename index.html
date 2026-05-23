@@ -174,7 +174,8 @@ if (IN_GAME) {
   // ---- websocket to the altar ----
   let ws;
   function connect() {
-    ws = new WebSocket(`ws://${location.host}`);
+    const wsScheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${wsScheme}//${location.host}`);
     ws.onopen = () => {
       document.getElementById('dot').classList.add('live');
       requestWakeLock();

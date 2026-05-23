@@ -5,10 +5,12 @@ const cf = spawn('cloudflared', ['tunnel', '--url', 'http://localhost:8080'], {
 });
 
 let started = false;
+let buf = '';
 
 function tryExtractUrl(text) {
   if (started) return;
-  const m = text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+  buf += text;
+  const m = buf.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
   if (!m) return;
   started = true;
   const url = m[0];

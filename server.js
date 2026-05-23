@@ -205,8 +205,8 @@ function start(port = PORT) {
 
 if (require.main === module) {
   start(PORT).then(() => {
-    console.log(`\n  COVEN altar is lit.  →  http://<your-LAN-ip>:${PORT}/?side=left`);
-    console.log(`                          http://<your-LAN-ip>:${PORT}/?side=right\n`);
+    console.log(`\n  COVEN altar is lit.  →  ${getPublicUrl()}/?side=left`);
+    console.log(`                          ${getPublicUrl()}/?side=right\n`);
   });
 }
 
