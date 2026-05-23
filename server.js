@@ -59,6 +59,13 @@ const MANIFEST = JSON.stringify({
   icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }],
 });
 
+const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#04060d"/>
+  <circle cx="256" cy="256" r="120" fill="#2f7bff" opacity="0.12"/>
+  <circle cx="256" cy="256" r="60" fill="#6ab4ff" opacity="0.5"/>
+  <circle cx="256" cy="256" r="22" fill="#eaf3ff"/>
+</svg>`;
+
 // Generated once at startup; served at /qr.png so phones need no internet.
 let qrBuffer = null;
 QRCode.toBuffer(`http://${getLanIp()}:${PORT}`, {
@@ -75,6 +82,11 @@ const httpServer = http.createServer((req, res) => {
   if (req.url === '/manifest.json') {
     res.writeHead(200, { 'Content-Type': 'application/manifest+json' });
     res.end(MANIFEST);
+    return;
+  }
+  if (req.url === '/icon.svg') {
+    res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
+    res.end(ICON_SVG);
     return;
   }
   res.writeHead(200, { 'Content-Type': 'text/html' });

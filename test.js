@@ -122,3 +122,17 @@ test('GET /manifest.json returns valid web app manifest', async () => {
     await new Promise(resolve => srv.close(resolve));
   }
 });
+
+test('GET /icon.svg returns SVG content', async () => {
+  const { httpServer: srv, interval } = await start(0);
+  const { port } = srv.address();
+  try {
+    const { status, headers, body } = await getRoute(port, '/icon.svg');
+    assert.equal(status, 200);
+    assert.ok(headers['content-type'].includes('svg'));
+    assert.ok(body.includes('<svg'));
+  } finally {
+    clearInterval(interval);
+    await new Promise(resolve => srv.close(resolve));
+  }
+});
