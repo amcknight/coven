@@ -5,8 +5,7 @@ const http = require('http');
 const { touchToWorld, start, httpServer, VW, VH, getPublicUrl } = require('./server');
 const Simulation = require('./simulation');
 
-test('Simulation.touchToWorld matches server.touchToWorld', () => {
-  // sanity: both paths point at the same function until server is migrated
+test('Simulation.touchToWorld canonical boundary cases', () => {
   assert.equal(Simulation.touchToWorld('left', { x: 0, y: 0 }).x, 0);
   assert.equal(Simulation.touchToWorld('right', { x: 1, y: 1 }).x, Simulation.VW);
 });

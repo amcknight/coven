@@ -187,6 +187,9 @@ fs.watch(HTML_PATH, () => {
 
 fs.watch(SIM_PATH, () => {
   try { simulationJs = fs.readFileSync(SIM_PATH); } catch {}
+  // The server's in-process Simulation was cached by require() at startup
+  // and will keep running the old physics until restart. Browsers refetch.
+  console.warn('simulation.js changed — restart server to pick up physics changes (browsers will reload)');
   const msg = JSON.stringify({ type: 'reload' });
   for (const ws of clients) {
     if (ws.readyState === 1) ws.send(msg);
