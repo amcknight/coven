@@ -14,9 +14,9 @@ test('Simulation.makeWorld returns a fresh world centered', () => {
   const w = Simulation.makeWorld();
   assert.equal(w.ember.x, Simulation.VW / 2);
   assert.equal(w.ember.y, Simulation.VH / 2);
-  assert.equal(w.pulse, 0);
   assert.equal(w.touch.left, null);
   assert.equal(w.touch.right, null);
+  assert.equal(w.pulse, undefined);
 });
 
 test('Simulation.tick advances the ember and bounces off walls', () => {
@@ -29,13 +29,6 @@ test('Simulation.tick advances the ember and bounces off walls', () => {
   // should have bounced off the wall — vx is now negative
   assert.ok(w.ember.vx < 0, `expected vx < 0 after bounce, got ${w.ember.vx}`);
   assert.ok(w.ember.x <= Simulation.VW - Simulation.R, 'ember stays inside');
-});
-
-test('Simulation.tick advances the pulse', () => {
-  const w = Simulation.makeWorld();
-  Simulation.tick(w, 1);
-  // dt=1s with pulse-period=6s ⇒ pulse advances by ~1/6
-  assert.ok(w.pulse > 0.15 && w.pulse < 0.18, `pulse=${w.pulse}`);
 });
 
 function getRoute(port, path) {
@@ -97,11 +90,11 @@ test('server broadcasts state within 100ms of connection', async () => {
       const timeout = setTimeout(() => reject(new Error('no state received')), 2000);
       ws.on('message', (data) => {
         const msg = JSON.parse(data);
-        if (msg.type !== 'state') return; // skip the new 'hello' lobby message
+        if (msg.type !== 'state') return; // skip hello/peers lobby messages
         clearTimeout(timeout);
         assert.ok(typeof msg.ember.x === 'number', 'ember.x is a number');
         assert.ok(typeof msg.ember.y === 'number', 'ember.y is a number');
-        assert.ok(msg.pulse >= 0 && msg.pulse < 1, 'pulse is in [0,1)');
+        assert.equal(msg.pulse, undefined, 'pulse is no longer in state payload');
         ws.close();
         resolve();
       });

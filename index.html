@@ -402,8 +402,8 @@ if (IN_GAME) {
     if (state) {
       view.ex += (state.ember.x - view.ex) * 0.35;
       view.ey += (state.ember.y - view.ey) * 0.35;
-      const elapsed = (performance.now() - state._t) / 1000;
-      const pulse = (state.pulse + elapsed / 6) % 1;
+      const syncedNow = performance.now() + clockOffset;
+      const pulse = (syncedNow / 6000) % 1;
       drawBorder(pulse);
       const otherSide = SIDE === 'left' ? 'right' : 'left';
       drawTouchGhost(state.touch[otherSide], 0.35, 3, 14); // other phone

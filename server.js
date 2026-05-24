@@ -270,7 +270,6 @@ function tick() {
   const payload = JSON.stringify({
     type: 'state',
     ember: { x: +e.x.toFixed(2), y: +e.y.toFixed(2) },
-    pulse: +world.pulse.toFixed(4),
     touch: {
       left: Simulation.touchToWorld('left', world.touch.left),
       right: Simulation.touchToWorld('right', world.touch.right),

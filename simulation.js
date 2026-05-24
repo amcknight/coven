@@ -4,7 +4,6 @@
   function makeWorld() {
     return {
       ember: { x: VW / 2, y: VH / 2, vx: 34, vy: 21 },
-      pulse: 0,
       touch: { left: null, right: null },
     };
   }
@@ -40,7 +39,6 @@
     const MIN = 28, MAX = 160;
     if (sp < MIN && sp > 0) { e.vx *= MIN / sp; e.vy *= MIN / sp; }
     if (sp > MAX) { e.vx *= MAX / sp; e.vy *= MAX / sp; }
-    world.pulse = (world.pulse + dt / 6) % 1;
   }
 
   const Simulation = { VW, VH, R, makeWorld, touchToWorld, tick };
