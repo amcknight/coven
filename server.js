@@ -180,7 +180,7 @@ const httpServer = http.createServer((req, res) => {
 fs.watch(HTML_PATH, () => {
   try { clientHtml = fs.readFileSync(HTML_PATH); } catch {}
   const msg = JSON.stringify({ type: 'reload' });
-  for (const ws of clients) {
+  for (const ws of clients.keys()) {
     if (ws.readyState === 1) ws.send(msg);
   }
 });
@@ -191,21 +191,35 @@ fs.watch(SIM_PATH, () => {
   // and will keep running the old physics until restart. Browsers refetch.
   console.warn('simulation.js changed — restart server to pick up physics changes (browsers will reload)');
   const msg = JSON.stringify({ type: 'reload' });
-  for (const ws of clients) {
+  for (const ws of clients.keys()) {
     if (ws.readyState === 1) ws.send(msg);
   }
 });
 
 // ---- WebSocket: rides on the same port ------------------------------
 const wss = new WebSocketServer({ server: httpServer });
-const clients = new Set();
+const clients = new Map(); // ws -> { clientId, side }
+let nextClientId = 1;
+let hostId = 'desktop';
+
+function broadcastHello(ws) {
+  if (ws.readyState !== 1) return;
+  const meta = clients.get(ws);
+  if (!meta) return;
+  ws.send(JSON.stringify({ type: 'hello', clientId: meta.clientId, hostId }));
+}
 
 wss.on('connection', (ws) => {
-  clients.add(ws);
+  const clientId = 'c' + (nextClientId++);
+  clients.set(ws, { clientId, side: null });
+  broadcastHello(ws);
+
   ws.on('message', (raw) => {
     let msg; try { msg = JSON.parse(raw); } catch { return; }
     if (msg.type === 'input' && (msg.side === 'left' || msg.side === 'right')) {
       world.touch[msg.side] = msg.active ? { x: msg.x, y: msg.y } : null;
+      const meta = clients.get(ws);
+      if (meta) meta.side = msg.side;
     }
   });
   ws.on('close', () => clients.delete(ws));
@@ -230,7 +244,7 @@ function tick() {
     },
     vw: Simulation.VW, vh: Simulation.VH, r: Simulation.R,
   });
-  for (const ws of clients) {
+  for (const ws of clients.keys()) {
     if (ws.readyState === 1) ws.send(payload);
   }
 }

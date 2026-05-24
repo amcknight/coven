@@ -96,9 +96,9 @@ test('server broadcasts state within 100ms of connection', async () => {
       const ws = new WebSocket(`ws://localhost:${port}`);
       const timeout = setTimeout(() => reject(new Error('no state received')), 2000);
       ws.on('message', (data) => {
-        clearTimeout(timeout);
         const msg = JSON.parse(data);
-        assert.equal(msg.type, 'state');
+        if (msg.type !== 'state') return; // skip the new 'hello' lobby message
+        clearTimeout(timeout);
         assert.ok(typeof msg.ember.x === 'number', 'ember.x is a number');
         assert.ok(typeof msg.ember.y === 'number', 'ember.y is a number');
         assert.ok(msg.pulse >= 0 && msg.pulse < 1, 'pulse is in [0,1)');
@@ -236,4 +236,29 @@ test('getPublicUrl falls back to LAN IP URL when COVEN_URL not set', () => {
   const url = getPublicUrl();
   assert.ok(url.startsWith('http://'));
   assert.ok(url.includes(':8080'));
+});
+
+test("server sends 'hello' with clientId and hostId on connect", async () => {
+  const { httpServer: srv, interval } = await start(0);
+  const { port } = srv.address();
+  try {
+    await new Promise((resolve, reject) => {
+      const ws = new WebSocket(`ws://localhost:${port}`);
+      const timeout = setTimeout(() => reject(new Error('no hello received')), 2000);
+      ws.on('message', (data) => {
+        const msg = JSON.parse(data);
+        if (msg.type !== 'hello') return; // skip the 60 Hz state messages
+        clearTimeout(timeout);
+        assert.equal(typeof msg.clientId, 'string');
+        assert.ok(msg.clientId.length > 0);
+        assert.equal(msg.hostId, 'desktop'); // host election not yet implemented
+        ws.close();
+        resolve();
+      });
+      ws.on('error', reject);
+    });
+  } finally {
+    clearInterval(interval);
+    await new Promise(resolve => srv.close(resolve));
+  }
 });
