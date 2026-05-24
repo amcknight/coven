@@ -238,6 +238,76 @@ test('getPublicUrl falls back to LAN IP URL when COVEN_URL not set', () => {
   assert.ok(url.includes(':8080'));
 });
 
+test("server responds to 'ping' with 'pong' echoing t and adding serverNow", async () => {
+  const { httpServer: srv, interval } = await start(0);
+  const { port } = srv.address();
+  try {
+    await new Promise((resolve, reject) => {
+      const ws = new WebSocket(`ws://localhost:${port}`);
+      const timeout = setTimeout(() => reject(new Error('no pong received')), 2000);
+      const t = 12345.678;
+      ws.on('open', () => ws.send(JSON.stringify({ type: 'ping', t })));
+      ws.on('message', (data) => {
+        const msg = JSON.parse(data);
+        if (msg.type !== 'pong') return;
+        clearTimeout(timeout);
+        assert.equal(msg.t, t);
+        assert.equal(typeof msg.serverNow, 'number');
+        assert.ok(msg.serverNow > 0);
+        ws.close();
+        resolve();
+      });
+      ws.on('error', reject);
+    });
+  } finally {
+    clearInterval(interval);
+    await new Promise(resolve => srv.close(resolve));
+  }
+});
+
+test("server forwards 'signal' from one client to another by clientId", async () => {
+  const { httpServer: srv, interval } = await start(0);
+  const { port } = srv.address();
+  try {
+    await new Promise((resolve, reject) => {
+      const ws1 = new WebSocket(`ws://localhost:${port}`);
+      let ws1Id = null, ws2Id = null;
+      const ws2 = new WebSocket(`ws://localhost:${port}`);
+      const timeout = setTimeout(() => reject(new Error('signal not forwarded')), 2000);
+
+      ws1.on('message', d => {
+        const m = JSON.parse(d);
+        if (m.type === 'hello') ws1Id = m.clientId;
+      });
+      ws2.on('message', d => {
+        const m = JSON.parse(d);
+        if (m.type === 'hello') {
+          ws2Id = m.clientId;
+          setTimeout(() => {
+            ws1.send(JSON.stringify({
+              type: 'signal', from: ws1Id, to: ws2Id,
+              payload: { kind: 'offer', sdp: 'fake-sdp' },
+            }));
+          }, 50);
+        }
+        if (m.type === 'signal') {
+          clearTimeout(timeout);
+          assert.equal(m.from, ws1Id);
+          assert.equal(m.to, ws2Id);
+          assert.deepEqual(m.payload, { kind: 'offer', sdp: 'fake-sdp' });
+          ws1.close(); ws2.close();
+          resolve();
+        }
+      });
+      ws1.on('error', reject);
+      ws2.on('error', reject);
+    });
+  } finally {
+    clearInterval(interval);
+    await new Promise(resolve => srv.close(resolve));
+  }
+});
+
 test("server broadcasts 'peers' when a second client joins", async () => {
   const { httpServer: srv, interval } = await start(0);
   const { port } = srv.address();

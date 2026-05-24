@@ -232,6 +232,24 @@ wss.on('connection', (ws) => {
         meta.side = msg.side;
         broadcastPeers();
       }
+      return;
+    }
+    if (msg.type === 'ping') {
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'pong', t: msg.t, serverNow: Date.now() }));
+      }
+      return;
+    }
+    if (msg.type === 'signal' && typeof msg.to === 'string') {
+      for (const [peerWs, meta] of clients) {
+        if (meta.clientId === msg.to && peerWs.readyState === 1) {
+          peerWs.send(JSON.stringify({
+            type: 'signal', from: msg.from, to: msg.to, payload: msg.payload,
+          }));
+          break;
+        }
+      }
+      return;
     }
   });
   ws.on('close', () => {
