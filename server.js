@@ -145,7 +145,7 @@ QRCode.toBuffer(getPublicUrl(), {
 
 const httpServer = http.createServer((req, res) => {
   if (req.url === '/qr.png' && qrBuffer) {
-    res.writeHead(200, { 'Content-Type': 'image/png' });
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
     res.end(qrBuffer);
     return;
   }

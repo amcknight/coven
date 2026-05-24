@@ -25,7 +25,7 @@ This plan is mid-execution. If picking up in a fresh session, read this first.
   - Tests added in [test.js](../../../test.js) cover both.
 
 **Waiting on:**
-- 🟡 **Cloudflare dashboard to flip `amcknight.ca` from "Pending Nameserver Update" → "Active"**. Last checked: still pending (external resolvers like Shaw/`8.8.8.8`/`1.1.1.1` still returning the old Google nameservers, which is normal during propagation). Cloudflare emails when it sees the change. Re-check [dash.cloudflare.com](https://dash.cloudflare.com/) periodically.
+- ✅ Nameservers propagated and Cloudflare flipped `amcknight.ca` to **Active** on 2026-05-23. `nslookup -type=NS amcknight.ca 1.1.1.1` returns `kami.ns.cloudflare.com` and `tom.ns.cloudflare.com`. Apex still resolves to GitHub Pages IPs (`185.199.x.153`) — existing site unaffected.
 
 **Next when Active:**
 - Tasks 3–7 (manual, ~15 min total): `cloudflared tunnel login` → `create coven` → write `config.yml` → `route dns` → smoke-test the tunnel.
@@ -119,7 +119,7 @@ nslookup -type=NS amcknight.ca
 
 **Expected (eventually):** the two `*.ns.cloudflare.com` nameservers appear. Until they do, Cloudflare won't activate the domain. **You can leave this running periodically in the background while you wait** — re-run every 5-10 minutes.
 
-- [ ] **Step 5: Confirm activation in Cloudflare**
+- [x] **Step 5: Confirm activation in Cloudflare**
 
 Back in the Cloudflare dashboard, click **Done, check nameservers** (the button from Task 1). Cloudflare will check and either confirm activation immediately or send you an email when it does.
 
