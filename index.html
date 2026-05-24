@@ -201,6 +201,52 @@ if (IN_GAME) {
   const view = { ex: 50, ey: 50 };
   const trail = [];
 
+  // ---- lobby state ----
+  let myClientId = null;
+  let hostId = 'desktop';
+  let peers = []; // [{clientId, side}]
+
+  // ---- clock sync ----
+  let clockOffset = 0; // performance.now() + clockOffset ≈ desktop's Date.now()
+  const inflightPings = new Map(); // sendT -> sendT
+  let pingBurstCount = 0;
+  let pingRefreshTimer = null;
+  let bestPingRtt = Infinity;
+
+  function sendPing() {
+    if (!ws || ws.readyState !== 1) return;
+    const t = performance.now();
+    inflightPings.set(t, t);
+    ws.send(JSON.stringify({ type: 'ping', t }));
+  }
+
+  function startPingBurst() {
+    pingBurstCount = 0;
+    const burstInterval = setInterval(() => {
+      sendPing();
+      pingBurstCount++;
+      if (pingBurstCount >= 5) {
+        clearInterval(burstInterval);
+        pingRefreshTimer = setInterval(sendPing, 30000);
+      }
+    }, 200);
+  }
+
+  function handlePong(msg) {
+    const sendT = inflightPings.get(msg.t);
+    if (sendT == null) return;
+    inflightPings.delete(msg.t);
+    const recvT = performance.now();
+    const rtt = recvT - sendT;
+    if (rtt < bestPingRtt) {
+      bestPingRtt = rtt;
+      clockOffset = (msg.serverNow + rtt / 2) - sendT;
+    } else if (rtt < bestPingRtt * 1.5) {
+      const newOffset = (msg.serverNow + rtt / 2) - sendT;
+      if (Math.abs(newOffset - clockOffset) > 20) clockOffset = newOffset;
+    }
+  }
+
   // ---- wake lock: keep the screen on ----
   let wakeLock = null;
   async function requestWakeLock() {
@@ -228,16 +274,23 @@ if (IN_GAME) {
     ws.onopen = () => {
       document.getElementById('dot').classList.add('live');
       requestWakeLock();
+      bestPingRtt = Infinity;
+      inflightPings.clear();
+      startPingBurst();
     };
     ws.onclose = () => {
       document.getElementById('dot').classList.remove('live');
+      if (pingRefreshTimer) { clearInterval(pingRefreshTimer); pingRefreshTimer = null; }
       setTimeout(connect, 800);
     };
     ws.onmessage = (ev) => {
       try {
         const m = JSON.parse(ev.data);
         if (m.type === 'reload') { location.reload(); return; }
-        if (m.type === 'state') { state = m; state._t = performance.now(); }
+        if (m.type === 'state') { state = m; state._t = performance.now(); return; }
+        if (m.type === 'hello') { myClientId = m.clientId; hostId = m.hostId; return; }
+        if (m.type === 'peers') { peers = m.list; return; }
+        if (m.type === 'pong') { handlePong(m); return; }
       } catch {}
     };
   }
