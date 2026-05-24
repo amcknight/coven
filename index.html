@@ -124,7 +124,7 @@
 <!-- game (shown when ?side=left|right) -->
 <canvas id="c"></canvas>
 <div id="grain"></div>
-<div id="label"><span class="dot" id="dot">●</span> &nbsp;coven · rite i · <b id="sidelabel">—</b></div>
+<div id="label"><span class="dot" id="dot">●</span> &nbsp;coven · rite i · <b id="sidelabel">—</b> · <span id="hostlabel">host: —</span></div>
 
 <script>
 const SIDE = new URLSearchParams(location.search).get('side');
@@ -180,6 +180,7 @@ if (IN_GAME) {
   document.getElementById('start').remove();
 
   const BASE_X = SIDE === 'right' ? 100 : 0;
+  const PEER_DISABLED = new URLSearchParams(location.search).get('peer') === '0';
   document.getElementById('sidelabel').textContent = SIDE;
 
   const cv = document.getElementById('c');
@@ -205,6 +206,20 @@ if (IN_GAME) {
   let myClientId = null;
   let hostId = 'desktop';
   let peers = []; // [{clientId, side}]
+
+  function renderHostLabel() {
+    const el = document.getElementById('hostlabel');
+    if (!el) return;
+    let text;
+    if (hostId === 'desktop') text = 'host: altar';
+    else if (hostId === myClientId) text = 'host: you';
+    else {
+      const peer = peers.find(p => p.clientId === hostId);
+      const tag = peer ? (peer.side || peer.clientId) : hostId;
+      text = `host: ${tag}`;
+    }
+    el.textContent = text;
+  }
 
   // ---- clock sync ----
   let clockOffset = 0; // performance.now() + clockOffset ≈ desktop's Date.now()
@@ -288,8 +303,8 @@ if (IN_GAME) {
         const m = JSON.parse(ev.data);
         if (m.type === 'reload') { location.reload(); return; }
         if (m.type === 'state') { state = m; state._t = performance.now(); return; }
-        if (m.type === 'hello') { myClientId = m.clientId; hostId = m.hostId; return; }
-        if (m.type === 'peers') { peers = m.list; return; }
+        if (m.type === 'hello') { myClientId = m.clientId; hostId = m.hostId; renderHostLabel(); return; }
+        if (m.type === 'peers') { peers = m.list; renderHostLabel(); return; }
         if (m.type === 'pong') { handlePong(m); return; }
       } catch {}
     };
@@ -414,6 +429,7 @@ if (IN_GAME) {
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+  renderHostLabel();
 }
 </script>
 <script>
