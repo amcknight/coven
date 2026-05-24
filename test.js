@@ -231,6 +231,91 @@ test('getPublicUrl falls back to LAN IP URL when COVEN_URL not set', () => {
   assert.ok(url.includes(':8080'));
 });
 
+test("hostId becomes first phone's clientId when second phone joins", async () => {
+  const { httpServer: srv } = await start(0);
+  const { port } = srv.address();
+  try {
+    await new Promise((resolve, reject) => {
+      const ws1 = new WebSocket(`ws://localhost:${port}`);
+      let ws1Id = null;
+      const timeout = setTimeout(() => reject(new Error('host not elected')), 2000);
+      let ws2;
+      ws1.on('message', d => {
+        const m = JSON.parse(d);
+        if (m.type !== 'hello') return;
+        if (!ws1Id) ws1Id = m.clientId;
+        if (m.hostId === ws1Id) {
+          clearTimeout(timeout);
+          ws1.close(); ws2.close();
+          resolve();
+        }
+      });
+      ws1.on('open', () => { ws2 = new WebSocket(`ws://localhost:${port}`); });
+      ws1.on('error', reject);
+    });
+  } finally {
+    await new Promise(resolve => srv.close(resolve));
+  }
+});
+
+test("hostId falls back to 'desktop' when host phone disconnects", async () => {
+  const { httpServer: srv } = await start(0);
+  const { port } = srv.address();
+  try {
+    await new Promise((resolve, reject) => {
+      const ws1 = new WebSocket(`ws://localhost:${port}`);
+      const ws2 = new WebSocket(`ws://localhost:${port}`);
+      const timeout = setTimeout(() => reject(new Error('hostId did not reset')), 3000);
+      let saw = false;
+      ws2.on('message', d => {
+        const m = JSON.parse(d);
+        if (m.type !== 'hello') return;
+        if (!saw && m.hostId !== 'desktop') {
+          saw = true;
+          ws1.close();
+        } else if (saw && m.hostId === 'desktop') {
+          clearTimeout(timeout);
+          ws2.close();
+          resolve();
+        }
+      });
+      ws1.on('error', reject);
+      ws2.on('error', reject);
+    });
+  } finally {
+    await new Promise(resolve => srv.close(resolve));
+  }
+});
+
+test("'peer-lost' resets hostId to 'desktop'", async () => {
+  const { httpServer: srv } = await start(0);
+  const { port } = srv.address();
+  try {
+    await new Promise((resolve, reject) => {
+      const ws1 = new WebSocket(`ws://localhost:${port}`);
+      const ws2 = new WebSocket(`ws://localhost:${port}`);
+      const timeout = setTimeout(() => reject(new Error('hostId did not reset after peer-lost')), 3000);
+      let phase = 'wait-election';
+      ws2.on('message', d => {
+        const m = JSON.parse(d);
+        if (m.type !== 'hello') return;
+        if (phase === 'wait-election' && m.hostId !== 'desktop') {
+          phase = 'sent-peer-lost';
+          ws2.send(JSON.stringify({ type: 'peer-lost', from: m.hostId }));
+        } else if (phase === 'sent-peer-lost' && m.hostId === 'desktop') {
+          clearTimeout(timeout);
+          ws1.close(); ws2.close();
+          resolve();
+        }
+      });
+      ws1.on('error', reject);
+      ws2.on('error', reject);
+    });
+  } finally {
+    await new Promise(resolve => srv.close(resolve));
+  }
+});
+
 test("server responds to 'ping' with 'pong' echoing t and adding serverNow", async () => {
   const { httpServer: srv, interval } = await start(0);
   const { port } = srv.address();

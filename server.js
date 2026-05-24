@@ -199,14 +199,20 @@ fs.watch(SIM_PATH, () => {
 // ---- WebSocket: rides on the same port ------------------------------
 const wss = new WebSocketServer({ server: httpServer });
 const clients = new Map(); // ws -> { clientId, side }
+const joinOrder = []; // clientIds in join order — election scans this
 let nextClientId = 1;
 let hostId = 'desktop';
+let tickInterval = null;
 
 function broadcastHello(ws) {
   if (ws.readyState !== 1) return;
   const meta = clients.get(ws);
   if (!meta) return;
   ws.send(JSON.stringify({ type: 'hello', clientId: meta.clientId, hostId }));
+}
+
+function broadcastHelloAll() {
+  for (const ws of clients.keys()) broadcastHello(ws);
 }
 
 function broadcastPeers() {
@@ -217,11 +223,38 @@ function broadcastPeers() {
   }
 }
 
+function electHost() {
+  // "first phone in wins" — among currently connected phones, in join order.
+  // Desktop is host whenever <2 phones are connected.
+  const live = new Set([...clients.values()].map(m => m.clientId));
+  const phoneIds = joinOrder.filter(id => live.has(id));
+  const newHost = phoneIds.length >= 2 ? phoneIds[0] : 'desktop';
+  if (newHost === hostId) return false;
+  hostId = newHost;
+  return true;
+}
+
+function applyHostState() {
+  if (hostId === 'desktop' && !tickInterval) {
+    Object.assign(world, Simulation.makeWorld());
+    tick.last = Date.now();
+    tickInterval = setInterval(tick, TICK);
+  } else if (hostId !== 'desktop' && tickInterval) {
+    clearInterval(tickInterval);
+    tickInterval = null;
+  }
+}
+
 wss.on('connection', (ws) => {
   const clientId = 'c' + (nextClientId++);
   clients.set(ws, { clientId, side: null });
+  joinOrder.push(clientId);
+
+  const hostChanged = electHost();
+  if (hostChanged) applyHostState();
   broadcastHello(ws);
   broadcastPeers();
+  if (hostChanged) broadcastHelloAll();
 
   ws.on('message', (raw) => {
     let msg; try { msg = JSON.parse(raw); } catch { return; }
@@ -251,9 +284,24 @@ wss.on('connection', (ws) => {
       }
       return;
     }
+    if (msg.type === 'peer-lost') {
+      // Any phone reporting a dead peer link → desktop becomes host immediately.
+      if (hostId !== 'desktop') {
+        hostId = 'desktop';
+        applyHostState();
+        broadcastHelloAll();
+      }
+      return;
+    }
   });
   ws.on('close', () => {
+    const meta = clients.get(ws);
+    if (meta) {
+      const idx = joinOrder.indexOf(meta.clientId);
+      if (idx >= 0) joinOrder.splice(idx, 1);
+    }
     clients.delete(ws);
+    if (electHost()) { applyHostState(); broadcastHelloAll(); }
     broadcastPeers();
   });
 });
@@ -283,9 +331,12 @@ function tick() {
 tick.last = Date.now();
 
 function start(port = PORT) {
-  const interval = setInterval(tick, TICK);
+  applyHostState(); // starts the tick when hostId === 'desktop' (initial)
   return new Promise(resolve => {
-    httpServer.listen(port, () => resolve({ httpServer, interval }));
+    httpServer.listen(port, () => resolve({
+      httpServer,
+      get interval() { return tickInterval; }, // tests destructure this; clearInterval(null) is a no-op
+    }));
   });
 }
 
