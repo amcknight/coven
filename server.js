@@ -22,20 +22,15 @@ const path = require('path');
 const zlib = require('zlib');
 const { WebSocketServer } = require('ws');
 const QRCode = require('qrcode');
+const Simulation = require('./simulation');
 
 const PORT = 8080;
 
 // ---- The shared world (logical units, not pixels) -------------------
-const VW = 200, VH = 100;          // arena size
-const R = 6;                       // ember radius
+const { VW, VH, R } = Simulation;
 const TICK = 1000 / 60;            // 60 Hz simulation
 
-const world = {
-  ember: { x: VW / 2, y: VH / 2, vx: 34, vy: 21 },  // px/sec-ish
-  pulse: 0,                                          // border pulse phase 0..1
-  // latest touch from each side, in LOCAL normalized coords (0..1)
-  touch: { left: null, right: null },
-};
+const world = Simulation.makeWorld();
 
 // ---- HTTP: hand the same client file to every phone -----------------
 function getLanIp() {
@@ -53,6 +48,9 @@ function getPublicUrl() {
 
 const HTML_PATH = path.join(__dirname, 'index.html');
 let clientHtml = fs.readFileSync(HTML_PATH);
+
+const SIM_PATH = path.join(__dirname, 'simulation.js');
+let simulationJs = fs.readFileSync(SIM_PATH);
 
 const MANIFEST = JSON.stringify({
   name: 'Coven',
@@ -169,6 +167,11 @@ const httpServer = http.createServer((req, res) => {
     res.end(SW_JS);
     return;
   }
+  if (req.url === '/simulation.js') {
+    res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-store' });
+    res.end(simulationJs);
+    return;
+  }
   res.writeHead(200, { 'Content-Type': 'text/html' });
   res.end(clientHtml);
 });
@@ -176,6 +179,14 @@ const httpServer = http.createServer((req, res) => {
 // Hot-reload: when index.html changes on disk, refresh it and tell every client.
 fs.watch(HTML_PATH, () => {
   try { clientHtml = fs.readFileSync(HTML_PATH); } catch {}
+  const msg = JSON.stringify({ type: 'reload' });
+  for (const ws of clients) {
+    if (ws.readyState === 1) ws.send(msg);
+  }
+});
+
+fs.watch(SIM_PATH, () => {
+  try { simulationJs = fs.readFileSync(SIM_PATH); } catch {}
   const msg = JSON.stringify({ type: 'reload' });
   for (const ws of clients) {
     if (ws.readyState === 1) ws.send(msg);
@@ -197,64 +208,24 @@ wss.on('connection', (ws) => {
   ws.on('close', () => clients.delete(ws));
 });
 
-// Convert a side's local normalized touch (0..1) into world coords.
-function touchToWorld(side, t) {
-  if (!t) return null;
-  const baseX = side === 'left' ? 0 : VW / 2;
-  return { x: baseX + t.x * (VW / 2), y: t.y * VH };
-}
-
 // ---- The simulation loop — the heartbeat of the rite ----------------
 function tick() {
   const now = Date.now();
-  const dt = Math.min((now - tick.last) / 1000, 0.05); // seconds, clamped
+  const dt = Math.min((now - tick.last) / 1000, 0.05);
   tick.last = now;
+
+  Simulation.tick(world, dt);
+
   const e = world.ember;
-
-  // Touch = a repulsion field. Hold a finger down and you shove the ember.
-  for (const side of ['left', 'right']) {
-    const w = touchToWorld(side, world.touch[side]);
-    if (!w) continue;
-    const dx = e.x - w.x, dy = e.y - w.y;
-    const d2 = dx * dx + dy * dy;
-    const d = Math.sqrt(d2) || 0.0001;
-    if (d < 55) {                       // radius of influence
-      const force = Math.min(900 / (d2 + 25), 60); // capped inverse-square
-      e.vx += (dx / d) * force * dt * 60;
-      e.vy += (dy / d) * force * dt * 60;
-    }
-  }
-
-  // Integrate.
-  e.x += e.vx * dt;
-  e.y += e.vy * dt;
-
-  // Elastic bounce off the four outer walls.
-  if (e.x < R) { e.x = R; e.vx = Math.abs(e.vx); }
-  if (e.x > VW - R) { e.x = VW - R; e.vx = -Math.abs(e.vx); }
-  if (e.y < R) { e.y = R; e.vy = Math.abs(e.vy); }
-  if (e.y > VH - R) { e.y = VH - R; e.vy = -Math.abs(e.vy); }
-
-  // Keep it lively: gentle drag + a floor/ceiling on speed.
-  e.vx *= 0.999; e.vy *= 0.999;
-  const sp = Math.hypot(e.vx, e.vy);
-  const MIN = 28, MAX = 160;
-  if (sp < MIN && sp > 0) { e.vx *= MIN / sp; e.vy *= MIN / sp; }
-  if (sp > MAX) { e.vx *= MAX / sp; e.vy *= MAX / sp; }
-
-  // Advance the border pulse (one full lap every ~6s).
-  world.pulse = (world.pulse + dt / 6) % 1;
-
-  // Broadcast the truth. Tiny payload — pure positional data.
   const payload = JSON.stringify({
     type: 'state',
     ember: { x: +e.x.toFixed(2), y: +e.y.toFixed(2) },
     pulse: +world.pulse.toFixed(4),
     touch: {
-      left: touchToWorld('left', world.touch.left),
-      right: touchToWorld('right', world.touch.right),
+      left: Simulation.touchToWorld('left', world.touch.left),
+      right: Simulation.touchToWorld('right', world.touch.right),
     },
-    vw: VW, vh: VH, r: R,
+    vw: Simulation.VW, vh: Simulation.VH, r: Simulation.R,
   });
   for (const ws of clients) {
     if (ws.readyState === 1) ws.send(payload);
@@ -276,4 +247,9 @@ if (require.main === module) {
   });
 }
 
-module.exports = { touchToWorld, start, httpServer, world, VW, VH, R, getPublicUrl };
+module.exports = {
+  touchToWorld: Simulation.touchToWorld,
+  start, httpServer, world,
+  VW: Simulation.VW, VH: Simulation.VH, R: Simulation.R,
+  getPublicUrl,
+};

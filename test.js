@@ -3,6 +3,41 @@ const assert = require('node:assert/strict');
 const WebSocket = require('ws');
 const http = require('http');
 const { touchToWorld, start, httpServer, VW, VH, getPublicUrl } = require('./server');
+const Simulation = require('./simulation');
+
+test('Simulation.touchToWorld matches server.touchToWorld', () => {
+  // sanity: both paths point at the same function until server is migrated
+  assert.equal(Simulation.touchToWorld('left', { x: 0, y: 0 }).x, 0);
+  assert.equal(Simulation.touchToWorld('right', { x: 1, y: 1 }).x, Simulation.VW);
+});
+
+test('Simulation.makeWorld returns a fresh world centered', () => {
+  const w = Simulation.makeWorld();
+  assert.equal(w.ember.x, Simulation.VW / 2);
+  assert.equal(w.ember.y, Simulation.VH / 2);
+  assert.equal(w.pulse, 0);
+  assert.equal(w.touch.left, null);
+  assert.equal(w.touch.right, null);
+});
+
+test('Simulation.tick advances the ember and bounces off walls', () => {
+  const w = Simulation.makeWorld();
+  // place near the right wall, moving right fast
+  w.ember.x = Simulation.VW - Simulation.R - 0.1;
+  w.ember.vx = 200;
+  w.ember.vy = 0;
+  Simulation.tick(w, 1 / 60);
+  // should have bounced off the wall — vx is now negative
+  assert.ok(w.ember.vx < 0, `expected vx < 0 after bounce, got ${w.ember.vx}`);
+  assert.ok(w.ember.x <= Simulation.VW - Simulation.R, 'ember stays inside');
+});
+
+test('Simulation.tick advances the pulse', () => {
+  const w = Simulation.makeWorld();
+  Simulation.tick(w, 1);
+  // dt=1s with pulse-period=6s ⇒ pulse advances by ~1/6
+  assert.ok(w.pulse > 0.15 && w.pulse < 0.18, `pulse=${w.pulse}`);
+});
 
 function getRoute(port, path) {
   return new Promise((resolve, reject) => {
