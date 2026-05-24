@@ -238,6 +238,36 @@ test('getPublicUrl falls back to LAN IP URL when COVEN_URL not set', () => {
   assert.ok(url.includes(':8080'));
 });
 
+test("server broadcasts 'peers' when a second client joins", async () => {
+  const { httpServer: srv, interval } = await start(0);
+  const { port } = srv.address();
+  try {
+    await new Promise((resolve, reject) => {
+      const ws1 = new WebSocket(`ws://localhost:${port}`);
+      const timeout = setTimeout(() => reject(new Error('no peers update')), 3000);
+      let ws2;
+      ws1.on('message', (data) => {
+        const msg = JSON.parse(data);
+        if (msg.type !== 'peers') return;
+        if (msg.list.length === 2) {
+          assert.ok(msg.list.every(p => typeof p.clientId === 'string'));
+          clearTimeout(timeout);
+          ws1.close(); ws2.close();
+          resolve();
+        }
+      });
+      ws1.on('open', () => {
+        ws2 = new WebSocket(`ws://localhost:${port}`);
+        ws2.on('error', reject);
+      });
+      ws1.on('error', reject);
+    });
+  } finally {
+    clearInterval(interval);
+    await new Promise(resolve => srv.close(resolve));
+  }
+});
+
 test("server sends 'hello' with clientId and hostId on connect", async () => {
   const { httpServer: srv, interval } = await start(0);
   const { port } = srv.address();

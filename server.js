@@ -209,20 +209,35 @@ function broadcastHello(ws) {
   ws.send(JSON.stringify({ type: 'hello', clientId: meta.clientId, hostId }));
 }
 
+function broadcastPeers() {
+  const list = [...clients.values()].map(({ clientId, side }) => ({ clientId, side }));
+  const payload = JSON.stringify({ type: 'peers', list });
+  for (const ws of clients.keys()) {
+    if (ws.readyState === 1) ws.send(payload);
+  }
+}
+
 wss.on('connection', (ws) => {
   const clientId = 'c' + (nextClientId++);
   clients.set(ws, { clientId, side: null });
   broadcastHello(ws);
+  broadcastPeers();
 
   ws.on('message', (raw) => {
     let msg; try { msg = JSON.parse(raw); } catch { return; }
     if (msg.type === 'input' && (msg.side === 'left' || msg.side === 'right')) {
       world.touch[msg.side] = msg.active ? { x: msg.x, y: msg.y } : null;
       const meta = clients.get(ws);
-      if (meta) meta.side = msg.side;
+      if (meta && meta.side !== msg.side) {
+        meta.side = msg.side;
+        broadcastPeers();
+      }
     }
   });
-  ws.on('close', () => clients.delete(ws));
+  ws.on('close', () => {
+    clients.delete(ws);
+    broadcastPeers();
+  });
 });
 
 // ---- The simulation loop — the heartbeat of the rite ----------------
