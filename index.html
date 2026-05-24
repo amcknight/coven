@@ -126,6 +126,7 @@
 <div id="grain"></div>
 <div id="label"><span class="dot" id="dot">●</span> &nbsp;coven · rite i · <b id="sidelabel">—</b> · <span id="hostlabel">host: —</span></div>
 
+<script src="/simulation.js"></script>
 <script>
 const SIDE = new URLSearchParams(location.search).get('side');
 const IN_GAME = SIDE === 'left' || SIDE === 'right';
@@ -262,6 +263,189 @@ if (IN_GAME) {
     }
   }
 
+  // ---- peer connections (WebRTC data channels) ----
+  const STUN = [{ urls: 'stun:stun.l.google.com:19302' }];
+  const peerConns = new Map(); // remoteClientId -> { pc, channel, openTimeout, lastFrameT }
+
+  function sendSignal(to, payload) {
+    if (!ws || ws.readyState !== 1 || !myClientId) return;
+    ws.send(JSON.stringify({ type: 'signal', from: myClientId, to, payload }));
+  }
+
+  function reportPeerLost(remoteId) {
+    if (!ws || ws.readyState !== 1 || !myClientId) return;
+    ws.send(JSON.stringify({ type: 'peer-lost', from: remoteId }));
+  }
+
+  function closePeerConn(remoteId) {
+    const entry = peerConns.get(remoteId);
+    if (!entry) return;
+    if (entry.openTimeout) clearTimeout(entry.openTimeout);
+    try { entry.channel?.close(); } catch {}
+    try { entry.pc?.close(); } catch {}
+    peerConns.delete(remoteId);
+  }
+
+  async function openPeerAsHost(remoteId) {
+    if (PEER_DISABLED) return;
+    if (peerConns.has(remoteId)) return;
+    const pc = new RTCPeerConnection({ iceServers: STUN });
+    const channel = pc.createDataChannel('coven', { ordered: true });
+    const entry = { pc, channel, openTimeout: null, lastFrameT: 0 };
+    peerConns.set(remoteId, entry);
+
+    entry.openTimeout = setTimeout(() => {
+      if (channel.readyState !== 'open') {
+        console.warn('peer open timeout', remoteId);
+        reportPeerLost(remoteId);
+        closePeerConn(remoteId);
+      }
+    }, 3000);
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate) sendSignal(remoteId, { kind: 'ice', candidate: e.candidate });
+    };
+    channel.onopen = () => {
+      clearTimeout(entry.openTimeout);
+      entry.lastFrameT = performance.now();
+    };
+    channel.onmessage = (ev) => {
+      entry.lastFrameT = performance.now();
+      try {
+        const m = JSON.parse(ev.data);
+        if (m.type === 'input' && (m.side === 'left' || m.side === 'right')) {
+          if (hostWorld) hostWorld.touch[m.side] = m.active ? { x: m.x, y: m.y } : null;
+        }
+      } catch {}
+    };
+    channel.onclose = () => { reportPeerLost(remoteId); closePeerConn(remoteId); };
+    channel.onerror = () => { reportPeerLost(remoteId); closePeerConn(remoteId); };
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    sendSignal(remoteId, { kind: 'offer', sdp: pc.localDescription });
+  }
+
+  async function handleSignal(from, payload) {
+    if (PEER_DISABLED) return;
+    let entry = peerConns.get(from);
+
+    if (payload.kind === 'offer') {
+      if (!entry) {
+        const pc = new RTCPeerConnection({ iceServers: STUN });
+        entry = { pc, channel: null, openTimeout: null, lastFrameT: 0 };
+        peerConns.set(from, entry);
+
+        entry.openTimeout = setTimeout(() => {
+          if (!entry.channel || entry.channel.readyState !== 'open') {
+            console.warn('peer open timeout (recv)', from);
+            reportPeerLost(from);
+            closePeerConn(from);
+          }
+        }, 3000);
+
+        pc.onicecandidate = (e) => {
+          if (e.candidate) sendSignal(from, { kind: 'ice', candidate: e.candidate });
+        };
+        pc.ondatachannel = (e) => {
+          entry.channel = e.channel;
+          entry.channel.onopen = () => {
+            clearTimeout(entry.openTimeout);
+            entry.lastFrameT = performance.now();
+          };
+          entry.channel.onmessage = (ev) => {
+            entry.lastFrameT = performance.now();
+            try {
+              const m = JSON.parse(ev.data);
+              if (m.type === 'state') { state = m; state._t = performance.now(); }
+            } catch {}
+          };
+          entry.channel.onclose = () => { reportPeerLost(from); closePeerConn(from); };
+          entry.channel.onerror = () => { reportPeerLost(from); closePeerConn(from); };
+        };
+      }
+      await entry.pc.setRemoteDescription(payload.sdp);
+      const answer = await entry.pc.createAnswer();
+      await entry.pc.setLocalDescription(answer);
+      sendSignal(from, { kind: 'answer', sdp: entry.pc.localDescription });
+      return;
+    }
+    if (payload.kind === 'answer' && entry) {
+      await entry.pc.setRemoteDescription(payload.sdp);
+      return;
+    }
+    if (payload.kind === 'ice' && entry) {
+      try { await entry.pc.addIceCandidate(payload.candidate); } catch {}
+      return;
+    }
+  }
+
+  function maybeOpenPeerConnections() {
+    if (PEER_DISABLED) return;
+    if (!myClientId) return;
+    if (hostId !== myClientId) {
+      for (const id of peerConns.keys()) closePeerConn(id);
+      return;
+    }
+    for (const p of peers) {
+      if (p.clientId === myClientId) continue;
+      if (!peerConns.has(p.clientId)) openPeerAsHost(p.clientId).catch(console.warn);
+    }
+    for (const id of peerConns.keys()) {
+      if (!peers.some(p => p.clientId === id)) closePeerConn(id);
+    }
+  }
+
+  // ---- host-side simulation (active only when this phone is host) ----
+  let hostWorld = null;
+  let hostTickHandle = null;
+  let lastHostTickT = 0;
+
+  function startHostingIfNeeded() {
+    if (PEER_DISABLED) return;
+    if (hostId !== myClientId) {
+      if (hostTickHandle) { clearInterval(hostTickHandle); hostTickHandle = null; hostWorld = null; }
+      return;
+    }
+    if (hostTickHandle) return;
+    hostWorld = Simulation.makeWorld();
+    lastHostTickT = performance.now();
+    hostTickHandle = setInterval(() => {
+      const now = performance.now();
+      const dt = Math.min((now - lastHostTickT) / 1000, 0.05);
+      lastHostTickT = now;
+      Simulation.tick(hostWorld, dt);
+      const payload = JSON.stringify({
+        type: 'state',
+        ember: { x: +hostWorld.ember.x.toFixed(2), y: +hostWorld.ember.y.toFixed(2) },
+        touch: {
+          left: Simulation.touchToWorld('left', hostWorld.touch.left),
+          right: Simulation.touchToWorld('right', hostWorld.touch.right),
+        },
+        vw: Simulation.VW, vh: Simulation.VH, r: Simulation.R,
+      });
+      for (const { channel } of peerConns.values()) {
+        if (channel && channel.readyState === 'open') channel.send(payload);
+      }
+      state = JSON.parse(payload);
+      state._t = performance.now();
+    }, 16);
+  }
+
+  // stall watchdog
+  setInterval(() => {
+    if (PEER_DISABLED) return;
+    const now = performance.now();
+    for (const [remoteId, entry] of peerConns) {
+      if (!entry.channel || entry.channel.readyState !== 'open') continue;
+      if (entry.lastFrameT && now - entry.lastFrameT > 500) {
+        console.warn('peer stall', remoteId);
+        reportPeerLost(remoteId);
+        closePeerConn(remoteId);
+      }
+    }
+  }, 200);
+
   // ---- wake lock: keep the screen on ----
   let wakeLock = null;
   async function requestWakeLock() {
@@ -303,9 +487,22 @@ if (IN_GAME) {
         const m = JSON.parse(ev.data);
         if (m.type === 'reload') { location.reload(); return; }
         if (m.type === 'state') { state = m; state._t = performance.now(); return; }
-        if (m.type === 'hello') { myClientId = m.clientId; hostId = m.hostId; renderHostLabel(); return; }
-        if (m.type === 'peers') { peers = m.list; renderHostLabel(); return; }
+        if (m.type === 'hello') {
+          myClientId = m.clientId; hostId = m.hostId;
+          renderHostLabel();
+          startHostingIfNeeded();
+          maybeOpenPeerConnections();
+          return;
+        }
+        if (m.type === 'peers') {
+          peers = m.list;
+          renderHostLabel();
+          startHostingIfNeeded();
+          maybeOpenPeerConnections();
+          return;
+        }
         if (m.type === 'pong') { handlePong(m); return; }
+        if (m.type === 'signal' && m.to === myClientId) { handleSignal(m.from, m.payload); return; }
       } catch {}
     };
   }
@@ -322,12 +519,28 @@ if (IN_GAME) {
     } : null;
   }
   function sendTouch(active, clientX, clientY) {
-    if (!ws || ws.readyState !== 1) return;
-    ws.send(JSON.stringify({
-      type: 'input', side: SIDE, active,
-      x: Math.max(0, Math.min(1, clientX / W)),
-      y: Math.max(0, Math.min(1, clientY / H)),
-    }));
+    const xn = Math.max(0, Math.min(1, clientX / W));
+    const yn = Math.max(0, Math.min(1, clientY / H));
+
+    // If I'm host, absorb my own touch directly into hostWorld (no wire).
+    if (!PEER_DISABLED && hostId === myClientId && hostWorld) {
+      hostWorld.touch[SIDE] = active ? { x: xn, y: yn } : null;
+      return;
+    }
+
+    const payload = { type: 'input', side: SIDE, active, x: xn, y: yn };
+
+    // prefer the peer channel to the host
+    if (!PEER_DISABLED && hostId !== 'desktop' && hostId !== myClientId) {
+      const entry = peerConns.get(hostId);
+      if (entry && entry.channel && entry.channel.readyState === 'open') {
+        entry.channel.send(JSON.stringify(payload));
+        return;
+      }
+    }
+
+    // fallback / desktop-host: WebSocket
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(payload));
   }
   const pt = e => (e.touches && e.touches[0]) ? e.touches[0] : e;
   cv.addEventListener('touchstart', e => {
