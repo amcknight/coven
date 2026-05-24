@@ -53,7 +53,9 @@ README.md      # short human-facing intro + quickstart
 
 ## Current state
 
-**Rite I — "Ember" (built & working).** Two phones form one arena framed by a blue border drawn around the *combined* square (neither phone draws the seam). A bright pulse travels the full perimeter, flowing continuously across the seam. A glowing ember bounces off the outer walls; touching and holding a phone creates a repulsion field that shoves it. Server-authoritative — touch streams up, state streams down. This is the only built rite.
+**Rite I — "Ember" (built & working).** Two phones form one arena framed by a blue border drawn around the *combined* square (neither phone draws the seam). A bright pulse travels the full perimeter, flowing continuously across the seam. A glowing ember bounces off the outer walls; touching and holding a phone creates a repulsion field that shoves it.
+
+The transport is hybrid: the altar (`server.js`) runs a WebSocket-based lobby (signaling, clock sync, fallback state stream), and when two phones can talk peer-to-peer via WebRTC the first phone to join becomes the host — it runs the physics locally (`simulation.js`, the shared dual-mode module) and broadcasts state to its peer over a data channel. If the host phone drops, suspends, or the peer link dies, the desktop quietly resumes hosting and the ember resets to center; the pulse is clock-derived (`(syncedNow / 6000) % 1`) so it never blinks. URL `?peer=0` forces the legacy WebSocket-only behavior for debugging. STUN: `stun:stun.l.google.com:19302`. No TURN — falling back to the desktop is our relay equivalent.
 
 ## Natural next moves (not a roadmap — pick what's fun)
 
