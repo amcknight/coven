@@ -291,7 +291,7 @@ if (IN_GAME) {
     if (peerConns.has(remoteId)) return;
     const pc = new RTCPeerConnection({ iceServers: STUN });
     const channel = pc.createDataChannel('coven', { ordered: true });
-    const entry = { pc, channel, openTimeout: null, lastFrameT: 0 };
+    const entry = { role: 'host', pc, channel, openTimeout: null, lastFrameT: 0 };
     peerConns.set(remoteId, entry);
 
     entry.openTimeout = setTimeout(() => {
@@ -302,6 +302,9 @@ if (IN_GAME) {
       }
     }, 3000);
 
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed') { reportPeerLost(remoteId); closePeerConn(remoteId); }
+    };
     pc.onicecandidate = (e) => {
       if (e.candidate) sendSignal(remoteId, { kind: 'ice', candidate: e.candidate });
     };
@@ -333,7 +336,7 @@ if (IN_GAME) {
     if (payload.kind === 'offer') {
       if (!entry) {
         const pc = new RTCPeerConnection({ iceServers: STUN });
-        entry = { pc, channel: null, openTimeout: null, lastFrameT: 0 };
+        entry = { role: 'peer', pc, channel: null, openTimeout: null, lastFrameT: 0 };
         peerConns.set(from, entry);
 
         entry.openTimeout = setTimeout(() => {
@@ -344,6 +347,9 @@ if (IN_GAME) {
           }
         }, 3000);
 
+        pc.onconnectionstatechange = () => {
+          if (pc.connectionState === 'failed') { reportPeerLost(from); closePeerConn(from); }
+        };
         pc.onicecandidate = (e) => {
           if (e.candidate) sendSignal(from, { kind: 'ice', candidate: e.candidate });
         };
@@ -432,11 +438,14 @@ if (IN_GAME) {
     }, 16);
   }
 
-  // stall watchdog
+  // stall watchdog — only meaningful on peer-side entries, which receive
+  // state at 60fps. Host-side entries see only sparse touch input, so silence
+  // is normal; their failures are caught by pc.onconnectionstatechange instead.
   setInterval(() => {
     if (PEER_DISABLED) return;
     const now = performance.now();
     for (const [remoteId, entry] of peerConns) {
+      if (entry.role !== 'peer') continue;
       if (!entry.channel || entry.channel.readyState !== 'open') continue;
       if (entry.lastFrameT && now - entry.lastFrameT > 500) {
         console.warn('peer stall', remoteId);
